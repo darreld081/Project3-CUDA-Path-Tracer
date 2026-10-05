@@ -152,11 +152,10 @@ __host__ __device__ static bool triangleTest(
     return t > 0.0f;
 }
 
-// closest triangle hit so far (tri == -1 means none yet)
 struct MeshHit {
     float t;
     int tri;
-    float u, v;  // barycentric coords
+    float u, v;
 };
 
 __host__ __device__ static void testTriangleRange(
@@ -173,16 +172,15 @@ __host__ __device__ static void testTriangleRange(
     }
 }
 
-__host__ __device__ static void traverseBVH(
+__host__ __device__ static void traverseBoundingVolHier(
     glm::vec3 origin, glm::vec3 direction, const Triangle* triangles,
     const BoundingVolumeHierarchyNode* bvhNodes, int root, MeshHit& hit) {
-    // explicit stack instead of recursion
     int stack[64];
     int stackSize = 0;
     stack[stackSize++] = root;
     while (stackSize > 0) {
         const BoundingVolumeHierarchyNode& node = bvhNodes[stack[--stackSize]];
-        // skip the box if the ray misses it or it is behind a hit we already have
+        // skip if the ray misses
         if (!boundingBoxTest(origin, direction, node.bboxMin, node.bboxMax, hit.t)) {
             continue;
         }
@@ -207,7 +205,6 @@ __host__ __device__ float meshIntersectionTest(
     glm::vec3& normal,
     bool& outside)
 {
-    // ray into object space, where the triangles live
     glm::vec3 origin = multiplyMV(mesh.inverseTransform, glm::vec4(r.origin, 1.0f));
     glm::vec3 direction = glm::normalize(multiplyMV(mesh.inverseTransform, glm::vec4(r.direction, 0.0f)));
 
@@ -217,14 +214,12 @@ __host__ __device__ float meshIntersectionTest(
     hit.u = 0.0f;
     hit.v = 0.0f;
     if (useBVH) {
-        traverseBVH(origin, direction, triangles, bvhNodes, mesh.bouindingVolumeHierarchyRoot, hit);
+        traverseBoundingVolHier(origin, direction, triangles, bvhNodes, mesh.bouindingVolumeHierarchyRoot, hit);
     }
     else if (useBoundsCulling && !boundingBoxTest(origin, direction, mesh.bboxMin, mesh.bboxMax)) {
-        // missed the single bounding box
         return -1;
     }
     else {
-        // brute force
         testTriangleRange(origin, direction, triangles, mesh.start, mesh.triCount, hit);
     }
     if (hit.tri == -1) {

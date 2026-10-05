@@ -284,15 +284,6 @@ void RenderImGui()
     //    counter++;
     //ImGui::SameLine();
     //ImGui::Text("counter = %d", counter);
-    bool bvhOn = getMeshBoundingVolHier();
-    bool cullingOn = getBoundsCullingEnabled();
-    bool toggled = ImGui::Checkbox("Mesh BVH", &bvhOn);
-    toggled |= ImGui::Checkbox("Mesh bounding-box culling (used when BVH is off)", &cullingOn);
-    if (toggled) {
-        setMeshBoundingVolHier(bvhOn);
-        setMeshBoundsCulling(cullingOn);
-        camchanged = true;  // restart accumulation so images/timings compare cleanly
-    }
     ImGui::Text("Traced Depth %d", imguiData->TracedDepth);
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     ImGui::End();

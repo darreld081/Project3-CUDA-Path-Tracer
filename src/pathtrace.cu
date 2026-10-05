@@ -548,9 +548,6 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         // TODO: compare between directly shading the path segments and shading
         // path segments that have been reshuffled to be contiguous in memory.
 
-        // Toggle (--sort-materials command line flag): make paths with the same material contiguous so
-        // neighboring threads run the same shading code. Intersections are the
-        // sort keys and paths are reordered with them to stay aligned.
         if (sortByMaterial) {
             thrust::sort_by_key(thrust::device, dev_intersections, dev_intersections + num_paths,
                 dev_path_segments, materialIdComparator());
@@ -566,9 +563,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         );
         checkCUDAError("shade");
 
-        // --- Stream compaction ---
-        // Partition (not remove_if) so finished paths keep their colors in the
-        // tail of dev_paths for finalGather; only the live prefix is traced next.
+    //stream compaction
         PathSegment* new_end = thrust::partition(thrust::device, dev_path_segments, dev_path_segments + num_paths, pathAliveCheck());
         num_paths = new_end - dev_path_segments;
         checkCUDAError("stream compaction");
