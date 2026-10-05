@@ -50,6 +50,8 @@ include_directories(${GLM_INCLUDE_DIRS})
 
 set(headers
     src/image.h
+    src/meshLoader.h
+    src/tinygltf_include.h
     src/interactions.h
     src/intersections.h
     src/glslUtility.hpp
@@ -61,6 +63,8 @@ set(headers
 
 set(sources
     src/main.cpp
+    src/meshLoader.cpp
+    src/tinygltf_impl.cpp
     src/stb.cpp
     src/image.cpp
     src/glslUtility.cpp

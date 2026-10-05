@@ -12,7 +12,8 @@
 enum GeomType
 {
     SPHERE,
-    CUBE
+    CUBE,
+    MESH  // a triangle mesh loaded from a glTF file
 };
 
 struct Ray
@@ -31,6 +32,20 @@ struct Geom
     glm::mat4 transform;
     glm::mat4 inverseTransform;
     glm::mat4 invTranspose;
+
+    // MESH only: this mesh owns triangles [triStart, triStart + triCount) of the
+    // scene-wide triangle array, plus an object-space bounding box around them.
+    int triStart;
+    int triCount;
+    glm::vec3 bboxMin;
+    glm::vec3 bboxMax;
+};
+
+// One triangle of a mesh, stored in the mesh's own (object) space.
+struct Triangle
+{
+    glm::vec3 v0, v1, v2;  // corner positions
+    glm::vec3 n0, n1, n2;  // normal at each corner (used to smooth-shade)
 };
 
 struct Material

@@ -1,6 +1,7 @@
 #include "scene.h"
 
 #include "utilities.h"
+#include "meshLoader.h"
 
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtx/string_cast.hpp>
@@ -73,10 +74,23 @@ void Scene::loadFromJSON(const std::string& jsonName)
     for (const auto& p : objectsData)
     {
         const auto& type = p["TYPE"];
-        Geom newGeom;
+        Geom newGeom{};
         if (type == "cube")
         {
             newGeom.type = CUBE;
+        }
+        else if (type == "mesh")
+        {
+            newGeom.type = MESH;
+            // Append this mesh's triangles to the shared list and remember which slice is ours.
+            newGeom.triStart = (int)triangles.size();
+            std::string file = p["FILE"];
+            if (!loadGltfMesh(file, triangles, newGeom.bboxMin, newGeom.bboxMax))
+            {
+                cout << "Couldn't load mesh " << file << endl;
+                exit(-1);
+            }
+            newGeom.triCount = (int)triangles.size() - newGeom.triStart;
         }
         else
         {

@@ -1,4 +1,5 @@
 #include "intersections.h"
+#include <cfloat>
 
 __host__ __device__ float boxIntersectionTest(
     Geom box,
@@ -105,5 +106,89 @@ __host__ __device__ float sphereIntersectionTest(
     intersectionPoint = multiplyMV(sphere.transform, glm::vec4(objspaceIntersection, 1.f));
     normal = glm::normalize(multiplyMV(sphere.invTranspose, glm::vec4(objspaceIntersection, 0.f)));
 
+    return glm::length(r.origin - intersectionPoint);
+}
+
+__host__ __device__ bool boundingBoxTest(
+    glm::vec3 rayOrigin,
+    glm::vec3 rayDirection,
+    glm::vec3 bboxMin,
+    glm::vec3 bboxMax) {
+    float tEnter = 0.0f;
+
+
+    float tExit = FLT_MAX;
+    for (int axis = 0; axis < 3; ++axis) {
+        float invDir = 1.0f / rayDirection[axis];
+        float t1 = (bboxMin[axis] - rayOrigin[axis]) * invDir;
+        float t2 = (bboxMax[axis] - rayOrigin[axis]) * invDir;
+        tEnter = glm::max(tEnter, glm::min(t1, t2));
+        tExit = glm::min(tExit, glm::max(t1, t2));
+    }
+    return tEnter <= tExit;
+}
+
+__host__ __device__ static bool triangleTest(
+    glm::vec3 origin, glm::vec3 direction, const Triangle& tri,
+    float& t, float& u, float& v) {
+    glm::vec3 edge1 = tri.v1 - tri.v0;
+    glm::vec3 edge2 = tri.v2 - tri.v0;
+    glm::vec3 p = glm::cross(direction, edge2);
+    float det = glm::dot(edge1, p);
+    if (glm::abs(det) < 1e-8f) {
+        return false;
+    }
+    float invDet = 1.0f / det;
+    glm::vec3 toOrigin = origin - tri.v0;
+    u = glm::dot(toOrigin, p) * invDet;
+    if (u < 0.0f || u > 1.0f) {
+        return false;
+    }
+    glm::vec3 q = glm::cross(toOrigin, edge1);
+    v = glm::dot(direction, q) * invDet;
+    if (v < 0.0f || u + v > 1.0f) {
+        return false;
+    }
+    t = glm::dot(edge2, q) * invDet;
+    return t > 0.0f;
+}
+
+__host__ __device__ float meshIntersectionTest(
+    Geom mesh,
+    const Triangle* triangles,
+    Ray r,
+    bool useBoundsCulling,
+    glm::vec3& intersectionPoint,
+    glm::vec3& normal,
+    bool& outside)
+{
+    glm::vec3 origin = multiplyMV(mesh.inverseTransform, glm::vec4(r.origin, 1.0f));
+    glm::vec3 direction = glm::normalize(multiplyMV(mesh.inverseTransform, glm::vec4(r.direction, 0.0f)));
+    if (useBoundsCulling && !boundingBoxTest(origin, direction, mesh.bboxMin, mesh.bboxMax)) {
+        return -1;
+    }
+    // find the closest hit
+    float closestT = FLT_MAX;
+    int closestTri = -1;
+    float closestU = 0.0f, closestV = 0.0f;
+    for (int i = mesh.triStart; i < mesh.triStart + mesh.triCount; i++) {
+        float t, u, v;
+        if (triangleTest(origin, direction, triangles[i], t, u, v) && t < closestT) {
+            closestT = t;
+            closestTri = i;
+            closestU = u;
+            closestV = v;
+        }
+    }
+    if (closestTri == -1) {
+        return -1;
+    }
+    const Triangle& tri = triangles[closestTri];
+    glm::vec3 objectNormal = glm::normalize(
+        (1.0f - closestU - closestV) * tri.n0 + closestU * tri.n1 + closestV * tri.n2);
+    outside = glm::dot(objectNormal, direction) < 0.0f;
+    glm::vec3 objectPoint = origin + closestT * direction;
+    intersectionPoint = multiplyMV(mesh.transform, glm::vec4(objectPoint, 1.0f));
+    normal = glm::normalize(multiplyMV(mesh.invTranspose, glm::vec4(objectNormal, 0.0f)));
     return glm::length(r.origin - intersectionPoint);
 }

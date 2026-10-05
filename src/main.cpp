@@ -344,7 +344,7 @@ int main(int argc, char** argv)
 
     if (argc < 2)
     {
-        printf("Usage: %s SCENEFILE.json [--sort-materials] [--russian-roulette]\n", argv[0]);
+        printf("Usage: %s SCENEFILE.json [--sort-materials] [--russian-roulette] [--no-bbox-culling]\n", argv[0]);
         return 1;
     }
 
@@ -355,6 +355,9 @@ int main(int argc, char** argv)
         }
         else if (strcmp(argv[i], "--russian-roulette") == 0) {
             setRussianRoulettePathTerm(true);
+        }
+        else if (strcmp(argv[i], "--no-bbox-culling") == 0) {
+            setMeshBoundsCulling(false);
         }
         else {
             printf("Unknown opt: %s\n", argv[i]);
