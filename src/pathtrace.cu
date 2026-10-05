@@ -20,6 +20,19 @@
 
 #define ERRORCHECK 1
 
+// Set to 1 to print how long each stage takes (first few iterations only).
+// Timings are only meaningful while ERRORCHECK is 1, because that makes every
+// kernel finish before the timer is read.
+#define PROFILE_STAGES 1
+#if PROFILE_STAGES
+#include <chrono>
+static double nowMs()
+{
+    using namespace std::chrono;
+    return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
+}
+#endif
+
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
 static void checkCUDAErrorFn(const char* msg, const char* file, int line)
@@ -129,6 +142,16 @@ void InitDataContainer(GuiDataContainer* imGuiData)
 void pathtraceInit(Scene* scene)
 {
     hst_scene = scene;
+
+#if PROFILE_STAGES
+    cudaDeviceProp prop;
+    int device = 0;
+    cudaGetDevice(&device);
+    cudaGetDeviceProperties(&prop, device);
+    printf("CUDA device: %s (%d SMs)\n", prop.name, prop.multiProcessorCount);
+    printf("Scene: %d geoms, %d triangles, %d BVH nodes\n",
+        (int)scene->geoms.size(), (int)scene->triangles.size(), (int)scene->bvhNodes.size());
+#endif
 
     const Camera& cam = hst_scene->state.camera;
     const int pixelcount = cam.resolution.x * cam.resolution.y;
@@ -536,6 +559,10 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     // --- PathSegment Tracing Stage ---
     // Shoot ray into scene, bounce between objects, push shading chunks
 
+#if PROFILE_STAGES
+    double iterStart = nowMs();
+    double intersectMs = 0.0, shadeMs = 0.0;
+#endif
     bool iterationComplete = false;
     while (!iterationComplete)
     {
@@ -544,6 +571,9 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
         // tracing
         dim3 numblocksPathSegmentTracing = (num_paths + blockSize1d - 1) / blockSize1d;
+#if PROFILE_STAGES
+        double stageStart = nowMs();
+#endif
         computeIntersections<<<numblocksPathSegmentTracing, blockSize1d>>> (
             depth,
             num_paths,
@@ -559,6 +589,10 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         checkCUDAError("trace one bounce");
         cudaDeviceSynchronize();
         depth++;
+#if PROFILE_STAGES
+        double afterIntersect = nowMs();
+        intersectMs += afterIntersect - stageStart;
+#endif
 
         // TODO:
         // --- Shading Stage ---
@@ -594,6 +628,14 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         PathSegment* new_end = thrust::partition(thrust::device, dev_paths, dev_paths + num_paths, PathAlive());
         num_paths = new_end - dev_paths;
         checkCUDAError("stream compaction");
+#if PROFILE_STAGES
+        shadeMs += nowMs() - afterIntersect;
+        if (iter <= 3)
+        {
+            printf("  iter %d depth %d: %d live paths, intersect so far %.1f ms, shade+compact so far %.1f ms\n",
+                iter, depth, num_paths, intersectMs, shadeMs);
+        }
+#endif
 
 
         iterationComplete = (depth >= traceDepth); // TODO: should be based off stream compaction results.
@@ -617,4 +659,11 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
     checkCUDAError("pathtrace");
+#if PROFILE_STAGES
+    if (iter <= 3)
+    {
+        printf("iter %d total %.1f ms (intersect %.1f, shade+compact %.1f)\n",
+            iter, nowMs() - iterStart, intersectMs, shadeMs);
+    }
+#endif
 }
