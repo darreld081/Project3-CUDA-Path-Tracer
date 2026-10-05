@@ -1,8 +1,7 @@
 #pragma once
 
-// Include tinygltf through this header everywhere, so every file sees the same
-// settings. We reuse the project's own json.hpp and skip texture loading, so
-// tinygltf doesn't bring a second copy of nlohmann json or stb_image.
+// include tinygltf only through this header so every file uses the same defines
+// (reuse our json.hpp, skip image loading since we don't use textures)
 #include <json.hpp>
 
 #define TINYGLTF_NO_INCLUDE_JSON

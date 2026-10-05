@@ -33,17 +33,15 @@ struct Geom
     glm::mat4 inverseTransform;
     glm::mat4 invTranspose;
 
-    // MESH only: this mesh owns triangles [triStart, triStart + triCount) of the
-    // scene-wide triangle array, plus an object-space bounding box around them.
+    // MESH only: slice of the scene's triangle array, plus its object-space bounding box
     int triStart;
     int triCount;
     glm::vec3 bboxMin;
     glm::vec3 bboxMax;
-    int bvhRoot;  // index of this mesh's root node in the scene-wide BVH node array
+    int bvhRoot;  // root node in the scene's BVH node array
 };
 
-// One box of a mesh's BVH tree (see bvh.h). Interior nodes have two children;
-// leaf nodes (left == -1) own triangles [triStart, triStart + triCount).
+// BVH tree node. Leaves have left == -1 and own triangles [triStart, triStart + triCount)
 struct BVHNode
 {
     glm::vec3 bboxMin;
@@ -54,11 +52,11 @@ struct BVHNode
     int triCount;
 };
 
-// One triangle of a mesh, stored in the mesh's own (object) space.
+// Mesh triangle in object space
 struct Triangle
 {
-    glm::vec3 v0, v1, v2;  // corner positions
-    glm::vec3 n0, n1, n2;  // normal at each corner (used to smooth-shade)
+    glm::vec3 v0, v1, v2;
+    glm::vec3 n0, n1, n2;  // per-vertex normals
 };
 
 struct Material

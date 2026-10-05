@@ -3,71 +3,60 @@
 #include <algorithm>
 #include <cfloat>
 
-// A node with this many triangles or fewer stops splitting and becomes a leaf.
-static const int MAX_TRIANGLES_PER_LEAF = 4;
+static const int MAX_TRIS_PER_LEAF = 4;
 
-static glm::vec3 triangleCentroid(const Triangle& t)
-{
-    return (t.v0 + t.v1 + t.v2) / 3.0f;
+static glm::vec3 centroidOf(const Triangle& tri) {
+    return (tri.v0 + tri.v1 + tri.v2) / 3.0f;
 }
 
-// Recursively builds the node for triangles [start, start + count) and returns its index.
-static int buildNode(std::vector<Triangle>& triangles, int start, int count,
-                     std::vector<BVHNode>& nodes)
-{
-    // Box around all triangles in this range, and box around just their centroids.
+// Builds the node for triangles [start, start + count) and returns its index in nodes
+static int buildNode(std::vector<Triangle>& triangles, int start, int count, std::vector<BVHNode>& nodes) {
     glm::vec3 boxMin(FLT_MAX), boxMax(-FLT_MAX);
-    glm::vec3 centroidMin(FLT_MAX), centroidMax(-FLT_MAX);
-    for (int i = start; i < start + count; ++i)
-    {
-        const Triangle& t = triangles[i];
-        boxMin = glm::min(boxMin, glm::min(t.v0, glm::min(t.v1, t.v2)));
-        boxMax = glm::max(boxMax, glm::max(t.v0, glm::max(t.v1, t.v2)));
-        centroidMin = glm::min(centroidMin, triangleCentroid(t));
-        centroidMax = glm::max(centroidMax, triangleCentroid(t));
+    glm::vec3 centerMin(FLT_MAX), centerMax(-FLT_MAX);
+    for (int i = start; i < start + count; i++) {
+        const Triangle& tri = triangles[i];
+        boxMin = glm::min(boxMin, glm::min(tri.v0, glm::min(tri.v1, tri.v2)));
+        boxMax = glm::max(boxMax, glm::max(tri.v0, glm::max(tri.v1, tri.v2)));
+        centerMin = glm::min(centerMin, centroidOf(tri));
+        centerMax = glm::max(centerMax, centroidOf(tri));
     }
 
-    // Reserve this node's slot now (children get added after it).
-    int nodeIndex = (int)nodes.size();
+    // reserve the slot first, children get pushed after it
+    int index = (int)nodes.size();
     nodes.push_back(BVHNode());
-    nodes[nodeIndex].bboxMin = boxMin;
-    nodes[nodeIndex].bboxMax = boxMax;
+    nodes[index].bboxMin = boxMin;
+    nodes[index].bboxMax = boxMax;
 
-    // Small enough: make a leaf that owns these triangles directly.
-    if (count <= MAX_TRIANGLES_PER_LEAF)
-    {
-        nodes[nodeIndex].left = -1;
-        nodes[nodeIndex].right = -1;
-        nodes[nodeIndex].triStart = start;
-        nodes[nodeIndex].triCount = count;
-        return nodeIndex;
+    if (count <= MAX_TRIS_PER_LEAF) {
+        nodes[index].left = -1;
+        nodes[index].right = -1;
+        nodes[index].triStart = start;
+        nodes[index].triCount = count;
+        return index;
     }
 
-    // Otherwise split along the axis where the triangle centers are most spread out.
-    glm::vec3 extent = centroidMax - centroidMin;
+    // split on the axis where the centroids are the most spread out
+    glm::vec3 spread = centerMax - centerMin;
     int axis = 0;
-    if (extent.y > extent.x) axis = 1;
-    if (extent.z > extent[axis]) axis = 2;
+    if (spread.y > spread.x) axis = 1;
+    if (spread.z > spread[axis]) axis = 2;
 
-    // Put the lower half of the triangles (by center position) first, the upper half second.
     int mid = start + count / 2;
     std::nth_element(triangles.begin() + start, triangles.begin() + mid, triangles.begin() + start + count,
         [axis](const Triangle& a, const Triangle& b) {
-            return triangleCentroid(a)[axis] < triangleCentroid(b)[axis];
+            return centroidOf(a)[axis] < centroidOf(b)[axis];
         });
 
-    // NOTE: don't hold a reference into `nodes` across these calls: push_back may move it.
-    int left = buildNode(triangles, start, mid - start, nodes);
-    int right = buildNode(triangles, mid, start + count - mid, nodes);
-    nodes[nodeIndex].left = left;
-    nodes[nodeIndex].right = right;
-    nodes[nodeIndex].triStart = 0;
-    nodes[nodeIndex].triCount = 0;
-    return nodeIndex;
+    // nodes can get reallocated by the recursive calls, so index into it afterwards
+    int leftChild = buildNode(triangles, start, mid - start, nodes);
+    int rightChild = buildNode(triangles, mid, start + count - mid, nodes);
+    nodes[index].left = leftChild;
+    nodes[index].right = rightChild;
+    nodes[index].triStart = 0;
+    nodes[index].triCount = 0;
+    return index;
 }
 
-int buildBVH(std::vector<Triangle>& triangles, int triStart, int triCount,
-             std::vector<BVHNode>& nodes)
-{
+int buildBVH(std::vector<Triangle>& triangles, int triStart, int triCount, std::vector<BVHNode>& nodes) {
     return buildNode(triangles, triStart, triCount, nodes);
 }

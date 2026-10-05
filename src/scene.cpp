@@ -83,7 +83,6 @@ void Scene::loadFromJSON(const std::string& jsonName)
         else if (type == "mesh")
         {
             newGeom.type = MESH;
-            // Append this mesh's triangles to the shared list and remember which slice is ours.
             newGeom.triStart = (int)triangles.size();
             std::string file = p["FILE"];
             if (!loadGltfMesh(file, triangles, newGeom.bboxMin, newGeom.bboxMax))
@@ -92,7 +91,7 @@ void Scene::loadFromJSON(const std::string& jsonName)
                 exit(-1);
             }
             newGeom.triCount = (int)triangles.size() - newGeom.triStart;
-            // Build the BVH (this also reorders our slice of triangles to match the tree).
+            // also reorders this mesh's triangles to match the tree
             newGeom.bvhRoot = buildBVH(triangles, newGeom.triStart, newGeom.triCount, bvhNodes);
         }
         else

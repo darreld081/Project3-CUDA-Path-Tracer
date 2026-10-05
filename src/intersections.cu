@@ -152,14 +152,13 @@ __host__ __device__ static bool triangleTest(
     return t > 0.0f;
 }
 
-// The best triangle hit found so far while searching a mesh.
+// closest triangle hit so far (tri == -1 means none yet)
 struct MeshHit {
-    float t;      // distance along the (object-space) ray
-    int tri;      // index of the triangle, -1 = nothing hit yet
-    float u, v;   // barycentric coordinates of the hit
+    float t;
+    int tri;
+    float u, v;  // barycentric coords
 };
 
-// Tests triangles [start, start + count) and updates `hit` if one is closer than what it holds.
 __host__ __device__ static void testTriangleRange(
     glm::vec3 origin, glm::vec3 direction, const Triangle* triangles,
     int start, int count, MeshHit& hit) {
@@ -174,27 +173,23 @@ __host__ __device__ static void testTriangleRange(
     }
 }
 
-// Walks the BVH tree from `root`, only visiting boxes the ray actually touches.
 __host__ __device__ static void traverseBVH(
     glm::vec3 origin, glm::vec3 direction, const Triangle* triangles,
     const BVHNode* bvhNodes, int root, MeshHit& hit) {
-    // We can't recurse nicely on a GPU, so keep our own to-do list (a stack) of nodes.
+    // explicit stack instead of recursion
     int stack[64];
     int stackSize = 0;
     stack[stackSize++] = root;
     while (stackSize > 0) {
         const BVHNode& node = bvhNodes[stack[--stackSize]];
-        // Skip this box (and everything under it) if the ray misses it or
-        // if it lies farther away than a triangle we have already hit.
+        // skip the box if the ray misses it or it is behind a hit we already have
         if (!boundingBoxTest(origin, direction, node.bboxMin, node.bboxMax, hit.t)) {
             continue;
         }
         if (node.left == -1) {
-            // Leaf: test its few triangles.
             testTriangleRange(origin, direction, triangles, node.triStart, node.triCount, hit);
         }
         else {
-            // Interior: come back to both children later.
             stack[stackSize++] = node.left;
             stack[stackSize++] = node.right;
         }
@@ -212,26 +207,24 @@ __host__ __device__ float meshIntersectionTest(
     glm::vec3& normal,
     bool& outside)
 {
-    // Move the ray into the mesh's object space, where the triangles live.
+    // ray into object space, where the triangles live
     glm::vec3 origin = multiplyMV(mesh.inverseTransform, glm::vec4(r.origin, 1.0f));
     glm::vec3 direction = glm::normalize(multiplyMV(mesh.inverseTransform, glm::vec4(r.direction, 0.0f)));
 
-    // Find the closest triangle hit, using one of three strategies:
     MeshHit hit;
     hit.t = FLT_MAX;
     hit.tri = -1;
     hit.u = 0.0f;
     hit.v = 0.0f;
     if (useBVH) {
-        // 1) BVH: tree of boxes, tests only a few triangles per ray.
         traverseBVH(origin, direction, triangles, bvhNodes, mesh.bvhRoot, hit);
     }
     else if (useBoundsCulling && !boundingBoxTest(origin, direction, mesh.bboxMin, mesh.bboxMax)) {
-        // 2) Single bounding box: ray misses the box, so skip every triangle.
+        // missed the single bounding box
         return -1;
     }
     else {
-        // 3) Brute force: test every triangle.
+        // brute force
         testTriangleRange(origin, direction, triangles, mesh.triStart, mesh.triCount, hit);
     }
     if (hit.tri == -1) {
