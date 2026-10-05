@@ -76,4 +76,4 @@ __host__ __device__ bool rayHitsBoundingBox(glm::vec3 rayOrigin,glm::vec3 rayDir
 
 /**
  * Test for mesh intersection **/
-__host__ __device__ float meshIntersectionTest(Geom mesh, const Triangle* triangles, Ray r, bool useBoundsCulling, glm::vec3& intersectionPoint, glm::vec3& normal, bool& outside);
+__host__ __device__ float meshIntersectionTest(Geom mesh, const Triangle* triangles, const BVHNode* bvhNodes, Ray r, bool useBoundsCulling, bool useBVH, glm::vec3& intersectionPoint, glm::vec3& normal, bool& outside);

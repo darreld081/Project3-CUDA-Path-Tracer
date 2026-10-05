@@ -39,6 +39,19 @@ struct Geom
     int triCount;
     glm::vec3 bboxMin;
     glm::vec3 bboxMax;
+    int bvhRoot;  // index of this mesh's root node in the scene-wide BVH node array
+};
+
+// One box of a mesh's BVH tree (see bvh.h). Interior nodes have two children;
+// leaf nodes (left == -1) own triangles [triStart, triStart + triCount).
+struct BVHNode
+{
+    glm::vec3 bboxMin;
+    glm::vec3 bboxMax;
+    int left;
+    int right;
+    int triStart;
+    int triCount;
 };
 
 // One triangle of a mesh, stored in the mesh's own (object) space.

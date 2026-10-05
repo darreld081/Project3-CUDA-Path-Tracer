@@ -81,6 +81,7 @@ static GuiDataContainer* guiData = NULL;
 static glm::vec3* dev_image = NULL;
 static Geom* dev_geoms = NULL;
 static Triangle* dev_triangles = NULL;
+static BVHNode* dev_bvhNodes = NULL;
 static Material* dev_materials = NULL;
 static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
@@ -88,6 +89,18 @@ static bool sortByMaterial = false;
 static bool russianRouletteEnabled = false;
 //cull any rays that msiss bounding box
 static bool meshBoundsCullingEnabled = true;
+// When on, meshes are searched through their BVH tree (much faster for dense meshes).
+static bool meshBVHEnabled = true;
+
+void setMeshBVH(bool enabled)
+{
+    meshBVHEnabled = enabled;
+}
+
+bool getMeshBVH()
+{
+    return meshBVHEnabled;
+}
 
 void setMeshBoundsCulling(bool enabled)
 {
@@ -133,6 +146,10 @@ void pathtraceInit(Scene* scene)
         size_t triBytes = scene->triangles.size() * sizeof(Triangle);
         cudaMalloc(&dev_triangles, triBytes);
         cudaMemcpy(dev_triangles, scene->triangles.data(), triBytes, cudaMemcpyHostToDevice);
+
+        size_t bvhBytes = scene->bvhNodes.size() * sizeof(BVHNode);
+        cudaMalloc(&dev_bvhNodes, bvhBytes);
+        cudaMemcpy(dev_bvhNodes, scene->bvhNodes.data(), bvhBytes, cudaMemcpyHostToDevice);
     }
 
     cudaMalloc(&dev_materials, scene->materials.size() * sizeof(Material));
@@ -151,6 +168,7 @@ void pathtraceFree()
     cudaFree(dev_image);  // no-op if dev_image is null
     cudaFree(dev_paths);
     cudaFree(dev_geoms);
+    cudaFree(dev_bvhNodes);
     cudaFree(dev_triangles);  // no-op if the scene has no meshes
     cudaFree(dev_materials);
     cudaFree(dev_intersections);
@@ -248,7 +266,9 @@ __global__ void computeIntersections(
     Geom* geoms,
     int geoms_size,
     Triangle* triangles,
+    BVHNode* bvhNodes,
     bool useMeshBoundsCulling,
+    bool useMeshBVH,
     ShadeableIntersection* intersections)
 {
     int path_index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -283,7 +303,7 @@ __global__ void computeIntersections(
             }
             else if (geom.type == MESH)
             {
-                t = meshIntersectionTest(geom, triangles, pathSegment.ray, useMeshBoundsCulling,
+                t = meshIntersectionTest(geom, triangles, bvhNodes, pathSegment.ray, useMeshBoundsCulling, useMeshBVH,
                     tmp_intersect, tmp_normal, outside);
             }
             // TODO: add more intersection tests here... metaball? CSG?
@@ -531,7 +551,9 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_geoms,
             hst_scene->geoms.size(),
             dev_triangles,
+            dev_bvhNodes,
             meshBoundsCullingEnabled,
+            meshBVHEnabled,
             dev_intersections
         );
         checkCUDAError("trace one bounce");

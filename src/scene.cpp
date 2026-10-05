@@ -2,6 +2,7 @@
 
 #include "utilities.h"
 #include "meshLoader.h"
+#include "bvh.h"
 
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtx/string_cast.hpp>
@@ -91,6 +92,8 @@ void Scene::loadFromJSON(const std::string& jsonName)
                 exit(-1);
             }
             newGeom.triCount = (int)triangles.size() - newGeom.triStart;
+            // Build the BVH (this also reorders our slice of triangles to match the tree).
+            newGeom.bvhRoot = buildBVH(triangles, newGeom.triStart, newGeom.triCount, bvhNodes);
         }
         else
         {

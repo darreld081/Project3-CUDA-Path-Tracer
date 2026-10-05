@@ -284,6 +284,15 @@ void RenderImGui()
     //    counter++;
     //ImGui::SameLine();
     //ImGui::Text("counter = %d", counter);
+    bool bvhOn = getMeshBVH();
+    bool cullingOn = getMeshBoundsCulling();
+    bool toggled = ImGui::Checkbox("Mesh BVH", &bvhOn);
+    toggled |= ImGui::Checkbox("Mesh bounding-box culling (used when BVH is off)", &cullingOn);
+    if (toggled) {
+        setMeshBVH(bvhOn);
+        setMeshBoundsCulling(cullingOn);
+        camchanged = true;  // restart accumulation so images/timings compare cleanly
+    }
     ImGui::Text("Traced Depth %d", imguiData->TracedDepth);
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     ImGui::End();
@@ -344,7 +353,7 @@ int main(int argc, char** argv)
 
     if (argc < 2)
     {
-        printf("Usage: %s SCENEFILE.json [--sort-materials] [--russian-roulette] [--no-bbox-culling]\n", argv[0]);
+        printf("Usage: %s SCENEFILE.json [--sort-materials] [--russian-roulette] [--no-bbox-culling] [--no-bvh]\n", argv[0]);
         return 1;
     }
 
@@ -358,6 +367,9 @@ int main(int argc, char** argv)
         }
         else if (strcmp(argv[i], "--no-bbox-culling") == 0) {
             setMeshBoundsCulling(false);
+        }
+        else if (strcmp(argv[i], "--no-bvh") == 0) {
+            setMeshBVH(false);
         }
         else {
             printf("Unknown opt: %s\n", argv[i]);
