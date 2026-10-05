@@ -6,6 +6,8 @@
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
+#include <thrust/partition.h>
+#include <thrust/sort.h>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -14,12 +16,13 @@
 #include "utilities.h"
 #include "intersections.h"
 #include "interactions.h"
+#include <algorithm>
 
 #define ERRORCHECK 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
-void checkCUDAErrorFn(const char* msg, const char* file, int line)
+static void checkCUDAErrorFn(const char* msg, const char* file, int line)
 {
 #if ERRORCHECK
     cudaDeviceSynchronize();
@@ -80,8 +83,17 @@ static Geom* dev_geoms = NULL;
 static Material* dev_materials = NULL;
 static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
-// TODO: static variables for device memory, any extra info you need, etc
-// ...
+static bool sortByMaterial = false;
+static bool russianRouletteEnabled = false;
+
+void setRussianRoulettePathTerm(bool enabled) {
+    russianRouletteEnabled = enabled;
+}
+
+void setMaterialSort(bool enabled)
+{
+    sortByMaterial = enabled;
+}
 
 void InitDataContainer(GuiDataContainer* imGuiData)
 {
@@ -126,6 +138,23 @@ void pathtraceFree()
     checkCUDAError("pathtraceFree");
 }
 
+__host__ __device__ glm::vec2 sampleDisc(glm::vec2 u)
+{
+    glm::vec2 offset = 2.0f * u - glm::vec2(1.0f);
+    if (offset.x == 0.0f && offset.y == 0.0f) {
+        return glm::vec2(0.0f);
+    }
+    float theta;
+    float offsetDiff = glm::abs(offset.x) - glm::abs(offset.y);
+    if (offsetDiff > 0) {
+        theta = (PI * offset.y) / (4.0f * offset.x);
+        return offset.x * glm::vec2(glm::cos(theta), glm::sin(theta));
+    }
+    //else
+    theta = (PI / 2.0f) - (PI * offset.x) / (4.0f * offset.y);
+    return offset.y * glm::vec2(glm::cos(theta), glm::sin(theta));
+}
+
 /**
 * Generate PathSegments with rays from the camera through the screen into the
 * scene, which is the first bounce of rays.
@@ -146,11 +175,41 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
         segment.ray.origin = cam.position;
         segment.color = glm::vec3(1.0f, 1.0f, 1.0f);
 
-        // TODO: implement antialiasing by jittering the ray
+        thrust::default_random_engine rng = makeSeededRandomEngine(iter, index, 0);
+        thrust::uniform_real_distribution<float> u01(0, 1);
+        // offset pixel by random offset value
+        float sampledX = (float)x + u01(rng);
+        float sampledY = (float)y + u01(rng);
+
+        // Antialiasing using sampled X and Y coordinates
         segment.ray.direction = glm::normalize(cam.view
-            - cam.right * cam.pixelLength.x * ((float)x - (float)cam.resolution.x * 0.5f)
-            - cam.up * cam.pixelLength.y * ((float)y - (float)cam.resolution.y * 0.5f)
+            - cam.right * cam.pixelLength.x * (sampledX - (float)cam.resolution.x * 0.5f)
+            - cam.up * cam.pixelLength.y * (sampledY - (float)cam.resolution.y * 0.5f)
         );
+
+        //generate ray from random point on lens
+        //BLOOPER focal point calculated from lens instead of camera
+        // if (cam.radius > 0.0f)
+        // {
+        //     thrust::default_random_engine rng = makeSeededRandomEngine(iter, index, 0);
+        //     thrust::uniform_real_distribution<float> u01(0, 1);
+        //     glm::vec2 randPointOnLens = cam.radius * sampleDisc(glm::vec2(u01(rng), u01(rng)));
+        //     segment.ray.origin = cam.position + cam.right * randPointOnLens.x + cam.up * randPointOnLens.y;
+        //     glm::vec3 focalPoint = segment.ray.origin + (cam.focalDist / glm::dot(segment.ray.direction, cam.view)) * segment.ray.direction;
+        //     segment.ray.direction = glm::normalize(focalPoint - segment.ray.origin);
+        // }
+
+               //generate ray from random point on lens
+        if (cam.radius > 0.0f)
+        {
+            thrust::default_random_engine rng = makeSeededRandomEngine(iter, index, 0);
+            thrust::uniform_real_distribution<float> u01(0, 1);
+            glm::vec2 randPointOnLens = cam.radius * sampleDisc(glm::vec2(u01(rng), u01(rng)));
+            // focal point comes from the pinhole ray (camera center), before the origin moves to the lens
+            glm::vec3 focalPoint = cam.position + (cam.focalDist / glm::dot(segment.ray.direction, cam.view)) * segment.ray.direction;
+            segment.ray.origin = cam.position + cam.right * randPointOnLens.x + cam.up * randPointOnLens.y;
+            segment.ray.direction = glm::normalize(focalPoint - segment.ray.origin);
+        }
 
         segment.pixelIndex = index;
         segment.remainingBounces = traceDepth;
@@ -280,6 +339,83 @@ __global__ void shadeFakeMaterial(
     }
 }
 
+// Real shader: evaluates the BSDF and spawns the next ray for each live path.
+// Paths terminate (remainingBounces = 0) when they hit a light, miss the
+// scene, or run out of bounces. Only paths that end on a light keep color.
+__global__ void shadeMaterial(
+    int iter,
+    int depth,
+    int num_paths,
+    ShadeableIntersection* shadeableIntersections,
+    PathSegment* pathSegments,
+    Material* materials,
+    bool russianRouletteEnabled)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_paths) return;
+
+    PathSegment segment = pathSegments[idx];
+    if (segment.remainingBounces <= 0) return; // already terminated
+
+    ShadeableIntersection intersection = shadeableIntersections[idx];
+    if (intersection.t > 0.0f) {
+        thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, depth);
+
+        Material material = materials[intersection.materialId];
+
+        if (material.emittance > 0.0f) {
+            // Hit a light: add its emission and end the path.
+            segment.color *= (material.color * material.emittance);
+            segment.remainingBounces = 0;
+        }
+        else {
+            glm::vec3 intersectPoint = segment.ray.origin + segment.ray.direction * intersection.t;
+            scatterRay(segment, intersectPoint, intersection.surfaceNormal, material, rng);
+            --segment.remainingBounces;
+            if (russianRouletteEnabled && depth > 3 && segment.remainingBounces > 0) {
+                thrust::uniform_real_distribution<float> u01(0, 1);
+                float maxComponent = glm::max(segment.color.x, glm::max(segment.color.y, segment.color.z));
+                float q = glm::max(0.05f, 1.0f - maxComponent);
+                if (u01(rng) < q) {
+                    segment.remainingBounces = 0;
+                    segment.color = glm::vec3(0.0f);
+                }
+                else {
+                    segment.color /= (1.0f - q);
+                }
+            }
+            if (segment.remainingBounces == 0) {
+                // Ran out of bounces without reaching a light.
+                segment.color = glm::vec3(0.0f);
+            }
+        }
+    }
+    else {
+        // No intersection: nothing to light this path.
+        segment.color = BACKGROUND_COLOR;
+        segment.remainingBounces = 0;
+    }
+    pathSegments[idx] = segment;
+}
+
+// Orders intersections/paths by material id.
+struct MaterialIdLess
+{
+    __host__ __device__ bool operator()(const ShadeableIntersection& a, const ShadeableIntersection& b) const
+    {
+        return a.materialId < b.materialId;
+    }
+};
+
+// true while a path still has bounces left.
+struct PathAlive
+{
+    __host__ __device__ bool operator()(const PathSegment& p) const
+    {
+        return p.remainingBounces > 0;
+    }
+};
+
 // Add the current iteration's output to the overall image
 __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iterationPaths)
 {
@@ -348,7 +484,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     int depth = 0;
     PathSegment* dev_path_end = dev_paths + pixelcount;
     int num_paths = dev_path_end - dev_paths;
-
+    const int total_paths = num_paths;
     // --- PathSegment Tracing Stage ---
     // Shoot ray into scene, bounce between objects, push shading chunks
 
@@ -381,15 +517,34 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         // TODO: compare between directly shading the path segments and shading
         // path segments that have been reshuffled to be contiguous in memory.
 
-        shadeFakeMaterial<<<numblocksPathSegmentTracing, blockSize1d>>>(
+        // Toggle (--sort-materials command line flag): make paths with the same material contiguous so
+        // neighboring threads run the same shading code. Intersections are the
+        // sort keys and paths are reordered with them to stay aligned.
+        if (sortByMaterial)
+        {
+            thrust::sort_by_key(thrust::device, dev_intersections, dev_intersections + num_paths,
+                dev_paths, MaterialIdLess());
+        }
+        shadeMaterial<<<numblocksPathSegmentTracing, blockSize1d>>>(
             iter,
+            depth,
             num_paths,
             dev_intersections,
             dev_paths,
-            dev_materials
+            dev_materials,
+            russianRouletteEnabled
         );
-        iterationComplete = true; // TODO: should be based off stream compaction results.
+        checkCUDAError("shade");
 
+        // --- Stream compaction ---
+        // Partition (not remove_if) so finished paths keep their colors in the
+        // tail of dev_paths for finalGather; only the live prefix is traced next.
+        PathSegment* new_end = thrust::partition(thrust::device, dev_paths, dev_paths + num_paths, PathAlive());
+        num_paths = new_end - dev_paths;
+        checkCUDAError("stream compaction");
+
+
+        iterationComplete = (depth >= traceDepth); // TODO: should be based off stream compaction results.
         if (guiData != NULL)
         {
             guiData->TracedDepth = depth;
@@ -398,7 +553,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
     // Assemble this iteration and apply it to the image
     dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-    finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
+    finalGather<<<numBlocksPixels, blockSize1d>>>(total_paths, dev_image, dev_paths);
 
     ///////////////////////////////////////////////////////////////////////////
 
