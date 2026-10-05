@@ -432,13 +432,13 @@ __global__ void shadeMaterial(
 
 // Orders intersections/paths by material id.
 struct materialIdComparator {
-    __host__ __device__ bool operator()( ShadeableIntersection& a, ShadeableIntersection& b) const{
+    __host__ __device__ bool operator()(const ShadeableIntersection& a, const ShadeableIntersection& b) const {
         return a.materialId < b.materialId;
     }
 };
 // true while a path still has bounces left.
 struct pathAliveCheck {
-    __host__ __device__ bool operator()(PathSegment& p) const {
+    __host__ __device__ bool operator()(const PathSegment& p) const {
         return p.remainingBounces > 0;
     }
 };
