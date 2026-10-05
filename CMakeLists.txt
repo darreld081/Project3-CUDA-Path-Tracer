@@ -50,7 +50,7 @@ include_directories(${GLM_INCLUDE_DIRS})
 
 set(headers
     src/image.h
-    src/bvh.h
+    src/boundingVolume.h
     src/meshLoader.h
     src/tinygltf_include.h
     src/interactions.h
@@ -64,7 +64,7 @@ set(headers
 
 set(sources
     src/main.cpp
-    src/bvh.cpp
+    src/boundingVolume.cpp
     src/meshLoader.cpp
     src/tinygltf_impl.cpp
     src/stb.cpp

@@ -284,12 +284,12 @@ void RenderImGui()
     //    counter++;
     //ImGui::SameLine();
     //ImGui::Text("counter = %d", counter);
-    bool bvhOn = getMeshBVH();
-    bool cullingOn = getMeshBoundsCulling();
+    bool bvhOn = getMeshBoundingVolHier();
+    bool cullingOn = getBoundsCullingEnabled();
     bool toggled = ImGui::Checkbox("Mesh BVH", &bvhOn);
     toggled |= ImGui::Checkbox("Mesh bounding-box culling (used when BVH is off)", &cullingOn);
     if (toggled) {
-        setMeshBVH(bvhOn);
+        setMeshBoundingVolHier(bvhOn);
         setMeshBoundsCulling(cullingOn);
         camchanged = true;  // restart accumulation so images/timings compare cleanly
     }
@@ -369,7 +369,7 @@ int main(int argc, char** argv)
             setMeshBoundsCulling(false);
         }
         else if (strcmp(argv[i], "--no-bvh") == 0) {
-            setMeshBVH(false);
+            setMeshBoundingVolHier(false);
         }
         else {
             printf("Unknown opt: %s\n", argv[i]);

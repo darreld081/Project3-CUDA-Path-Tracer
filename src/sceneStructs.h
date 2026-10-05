@@ -33,30 +33,24 @@ struct Geom
     glm::mat4 inverseTransform;
     glm::mat4 invTranspose;
 
-    // MESH only: slice of the scene's triangle array, plus its object-space bounding box
-    int triStart;
+    int start;
     int triCount;
     glm::vec3 bboxMin;
     glm::vec3 bboxMax;
-    int bvhRoot;  // root node in the scene's BVH node array
+    int bouindingVolumeHierarchyRoot;
 };
 
-// BVH tree node. Leaves have left == -1 and own triangles [triStart, triStart + triCount)
-struct BVHNode
-{
+struct BoundingVolumeHierarchyNode {
     glm::vec3 bboxMin;
     glm::vec3 bboxMax;
     int left;
     int right;
-    int triStart;
+    int start;
     int triCount;
 };
-
-// Mesh triangle in object space
-struct Triangle
-{
+struct Triangle {
     glm::vec3 v0, v1, v2;
-    glm::vec3 n0, n1, n2;  // per-vertex normals
+    glm::vec3 n0, n1, n2;
 };
 
 struct Material

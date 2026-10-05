@@ -2,7 +2,7 @@
 
 #include "utilities.h"
 #include "meshLoader.h"
-#include "bvh.h"
+#include "boundingVolume.h"
 
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtx/string_cast.hpp>
@@ -83,19 +83,13 @@ void Scene::loadFromJSON(const std::string& jsonName)
         else if (type == "mesh")
         {
             newGeom.type = MESH;
-            newGeom.triStart = (int)triangles.size();
+            newGeom.start = (int) triangles.size();
             std::string file = p["FILE"];
-            if (!loadGltfMesh(file, triangles, newGeom.bboxMin, newGeom.bboxMax))
-            {
-                cout << "Couldn't load mesh " << file << endl;
-                exit(-1);
-            }
-            newGeom.triCount = (int)triangles.size() - newGeom.triStart;
-            // also reorders this mesh's triangles to match the tree
-            newGeom.bvhRoot = buildBVH(triangles, newGeom.triStart, newGeom.triCount, bvhNodes);
+            loadMesh(file, triangles, newGeom.bboxMin, newGeom.bboxMax);
+            newGeom.triCount = (int)triangles.size() - newGeom.start;
+            newGeom.bouindingVolumeHierarchyRoot = buildBoundingVolumeHierarchy(triangles, newGeom.start, newGeom.triCount, bvhNodes);
         }
-        else
-        {
+        else {
             newGeom.type = SPHERE;
         }
         newGeom.materialid = MatNameToID[p["MATERIAL"]];
