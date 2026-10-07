@@ -57,8 +57,8 @@
             800
         ],
         "FOVY": 45.0,
-        "ITERATIONS": 1000,
-        "DEPTH": 6,
+        "ITERATIONS": 2000,
+        "DEPTH": 14,
         "FILE": "dof_simple",
         "EYE": [
             0.0,

@@ -195,7 +195,7 @@
         {
             "TYPE": "mesh",
             "FILE": "scenes/models/Suzanne.gltf",
-            "MATERIAL": "diffuse_white",
+            "MATERIAL": "specular_white",
             "TRANS": [
                 0.0,
                 3.0,
@@ -203,7 +203,7 @@
             ],
             "ROTAT": [
                 -20.0,
-                0.0,
+                -30.0,
                 0.0
             ],
             "SCALE": [
